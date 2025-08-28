@@ -43,16 +43,22 @@ func main() {
 		fmt.Println("argument must be greater than 1")
 		os.Exit(1)
 	}
-	fmt.Println("argument receive, initiated order id ", val)
+	fmt.Println("argument receive, initiated order for total of ", val)
+
 	var wg sync.WaitGroup
 	jobs := make(chan *Order, 100)
 	resChan := make(chan *ResultOrder, 100)
 	totalBarista := 5
+
+	var completedOrder atomic.Int32
+	var failedOrder atomic.Int32
+
+	// Start barista workers
 	for i := 0; i < totalBarista; i++ {
 		go DispatchWorker(&wg, i, jobs, resChan)
 	}
-	var completedOrder atomic.Int32
-	var failedOrder atomic.Int32
+
+	// Start order generator
 	go func() {
 		for i := 1; i <= val; i++ {
 			wg.Add(1)
@@ -62,17 +68,30 @@ func main() {
 		close(jobs)
 	}()
 
-	for res := range resChan {
-		if res.OrderCompleted {
-			fmt.Printf("order completed for ID %v Barista No %v And Coffe Flavor %v \n", res.ID, res.BaristaNo, res.OrderFlavor)
-			completedOrder.Add(1)
-		} else {
-			fmt.Printf("Order Completed but the customer already left because take too long for ID %v, Barista No %v and Coffee Flavor %v \n", res.ID, res.BaristaNo, res.OrderFlavor)
-			failedOrder.Add(1)
+	// Start result processor
+	go func() {
+		for res := range resChan {
+			fmt.Println("receiving result for id ", res.ID)
+			if res.OrderCompleted {
+				fmt.Printf("order completed for ID %v Barista No %v And Coffe Flavor %v \n", res.ID, res.BaristaNo, res.OrderFlavor)
+				completedOrder.Add(1)
+			} else {
+				fmt.Printf("Order Completed but the customer already left because take too long for ID %v, Barista No %v and Coffee Flavor %v \n", res.ID, res.BaristaNo, res.OrderFlavor)
+				failedOrder.Add(1)
+			}
 		}
-	}
+	}()
+
+	// Wait for all orders to be processed
+	fmt.Println("waiting all worker to be done")
 	wg.Wait()
+	fmt.Println("closing result channel")
+	// Close result channel after all workers are done
 	close(resChan)
+
+	// Give a moment for the result processor to finish
+	time.Sleep(100 * time.Millisecond)
+
 	fmt.Println("total completed order ", completedOrder.Load())
 	fmt.Println("total failed order", failedOrder.Load())
 }
@@ -87,23 +106,28 @@ func generateOrder(id int) Order {
 
 func DispatchWorker(wg *sync.WaitGroup, baristaNo int, jobs <-chan *Order, result chan<- *ResultOrder) {
 	for job := range jobs {
-		fmt.Printf("order received for ID %v barista No %v and Coffe Flavor %v", job.ID, baristaNo, job.CoffeeFlavor)
-		resultOrder := proceedJob(job)
+		fmt.Printf("order received for ID %v barista No %v and Coffe Flavor %v\n", job.ID, baristaNo, job.CoffeeFlavor)
+		resultOrder := proceedJob(job, baristaNo)
 		resData := new(ResultOrder)
 		resData.ID = job.ID
 		resData.BaristaNo = baristaNo
 		resData.OrderCompleted = resultOrder
 		resData.OrderFlavor = job.CoffeeFlavor
+		fmt.Println("sending result to res chan id ", job.ID)
 		result <- resData
+		fmt.Println("receiving signal done id ", job.ID)
 		wg.Done()
 	}
 }
 
-func proceedJob(order *Order) bool {
-	fmt.Printf("order processed for %v", order.CoffeeFlavor)
+func proceedJob(order *Order, baristaNo int) bool {
+	fmt.Printf("order processed for %v by barista no %v\n", order.CoffeeFlavor, baristaNo)
+	now := time.Now()
 	rand.Seed(time.Now().UnixNano())
-	randomSecond := rand.Intn(10)
-	time.Sleep(time.Duration(randomSecond) * time.Millisecond)
+	randomSecond := rand.Intn(15)
+	time.Sleep(time.Duration(randomSecond) * time.Second)
+	elapsedTime := time.Since(now)
+	fmt.Printf("order id %v processed with duration of %v \n", order.ID, elapsedTime)
 	if randomSecond > 5 {
 		return false
 	}
