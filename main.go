@@ -54,7 +54,7 @@ func main() {
 	var failedOrder atomic.Int32
 
 	// Start barista workers
-	for i := 0; i < totalBarista; i++ {
+	for i := 1; i <= totalBarista; i++ {
 		go DispatchWorker(&wg, i, jobs, resChan)
 	}
 
@@ -106,28 +106,26 @@ func generateOrder(id int) Order {
 
 func DispatchWorker(wg *sync.WaitGroup, baristaNo int, jobs <-chan *Order, result chan<- *ResultOrder) {
 	for job := range jobs {
-		fmt.Printf("order received for ID %v barista No %v and Coffe Flavor %v\n", job.ID, baristaNo, job.CoffeeFlavor)
+		fmt.Printf("Barista NO %v receiving order for ID %v and Coffe Flavor %v\n", baristaNo, job.ID, job.CoffeeFlavor)
 		resultOrder := proceedJob(job, baristaNo)
 		resData := new(ResultOrder)
 		resData.ID = job.ID
 		resData.BaristaNo = baristaNo
 		resData.OrderCompleted = resultOrder
 		resData.OrderFlavor = job.CoffeeFlavor
-		fmt.Println("sending result to res chan id ", job.ID)
+		fmt.Printf("BARISTA NO %v sending order ID %v to frontline \n", baristaNo, job.ID)
 		result <- resData
-		fmt.Println("receiving signal done id ", job.ID)
+		fmt.Printf("BARISTA NO %v sending signal done for order ID %v, and ready taking another order \n", baristaNo, job.ID)
 		wg.Done()
 	}
 }
 
 func proceedJob(order *Order, baristaNo int) bool {
-	fmt.Printf("order processed for %v by barista no %v\n", order.CoffeeFlavor, baristaNo)
-	now := time.Now()
+	fmt.Printf("BARISTA NO %v processing order for ID %v and Flavor %v\n", baristaNo, order.ID, order.CoffeeFlavor)
 	rand.Seed(time.Now().UnixNano())
 	randomSecond := rand.Intn(15)
 	time.Sleep(time.Duration(randomSecond) * time.Second)
-	elapsedTime := time.Since(now)
-	fmt.Printf("order id %v processed with duration of %v \n", order.ID, elapsedTime)
+	fmt.Printf("BARISTA NO %v processed order for id %v with duration of %v S \n", baristaNo, order.ID, randomSecond)
 	if randomSecond > 5 {
 		return false
 	}
